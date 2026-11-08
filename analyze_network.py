@@ -1,4 +1,4 @@
-from mac_vendor_lookup import MacLookup
+from mac_vendor_lookup import MacLookup, VendorNotFoundError
 from scapy.all import ARP, PcapReader
 
 
@@ -25,16 +25,23 @@ class AnalyzeNetwork:
                 dsrc = {}
                 dsrc["MAC"] = hwsrc
                 dsrc["IP"] = psrc
-                dsrc["VENDOR"] = self.lookup.lookup(hwsrc)
+                dsrc["VENDOR"] = self._get_vendor(hwsrc)
                 self._add_info_to_list(dsrc)
                 ddst = {}
                 ddst["MAC"] = hwdst if hwdst != "ff:ff:ff:ff:ff:ff" else self.UNKNOWN
                 ddst["IP"] = pdst if pdst != "255.255.255.255" else self.UNKNOWN
                 ddst["VENDOR"] = (
-                    self.lookup.lookup(ddst["MAC"])
+                    self._get_vendor(ddst["MAC"])
                     if ddst["MAC"] != self.UNKNOWN
                     else self.UNKNOWN
                 )
+
+    def _get_vendor(self, macaddr):
+        try:
+            vendor = self.lookup.lookup(macaddr)
+            return vendor
+        except VendorNotFoundError:
+            return self.UNKNOWN
 
     def _add_info_to_list(self, new_packet):
         for packet in self.info:
