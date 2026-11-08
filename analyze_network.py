@@ -1,5 +1,5 @@
-from scapy.all import PcapReader, IP, ARP
 from mac_vendor_lookup import MacLookup
+from scapy.all import ARP, PcapReader
 
 
 class AnalyzeNetwork:
