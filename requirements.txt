@@ -1,0 +1,2 @@
+mac_vendor_lookup==0.1.15
+scapy==2.8.0
