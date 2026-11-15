@@ -3,21 +3,24 @@ from scapy.all import ARP, ICMP, IP, Ether, PcapReader
 
 
 class AnalyzeNetwork:
+    LINUX = "linux or linux based system (android and such)"
+    WINDOWS = "windows"
+    UNKNOWN = "unknown"
+    needed_keys = ("OS", "MAC", "VENDOR", "IP")
+    LINUX_PING = bytes(range(16, 56))
+    WINDOWS_PING = b"abcdefghijklmnopqrstuvwabcdefghi"
+    PINGS = {LINUX_PING: LINUX, WINDOWS_PING: WINDOWS}
+
     def __init__(self, pcap_path):
         """
         pcap_path (string): path to a pcap file
         """
-        self.LINUX = "linux or linux based system (android and such)"
-        self.WINDOWS = "windows"
         self.pcap_path = pcap_path
-        self.a_reader = PcapReader(self.pcap_path)
         self.info = []
         self.lookup = MacLookup()
-        self.UNKNOWN = "unknown"
-        self.needed_keys = ["OS", "MAC", "VENDOR", "IP"]
-        self.scan_pcap()
+        self._scan_pcap()
 
-    def scan_pcap(self):
+    def _scan_pcap(self):
         """
         reads through the pcap file and orginizes all the info into a list.
         """
@@ -28,7 +31,6 @@ class AnalyzeNetwork:
             if ICMP in packet:
                 self._process_icmp(packet)
         reader.close()
-        """returns assumed operating system of a device"""
 
     def _process_icmp(self, packet):
         # we can not know the MAC addr of either device (because they change on the way)
@@ -40,9 +42,17 @@ class AnalyzeNetwork:
         ddst_phys["VENDOR"] = self._get_vendor(ddst_phys["MAC"])
         dsrc_ip = {}
         dsrc_ip["IP"] = packet[IP].src
-        dsrc_ip["OS"] = self.WINDOWS if 65 <= packet[IP].ttl <= 128 else self.LINUX
+        if 108 <= packet[IP].ttl <= 128:
+            dsrc_ip["OS"] = AnalyzeNetwork.WINDOWS
+        elif 44 <= packet[IP].ttl <= 64:
+            dsrc_ip["OS"] = AnalyzeNetwork.LINUX
         ddst_ip = {}
         ddst_ip["IP"] = packet[IP].dst
+        if packet[ICMP].load[16:] in AnalyzeNetwork.PINGS:
+            if packet[ICMP].type == 8:
+                dsrc_ip["OS"] = AnalyzeNetwork.PINGS[packet[ICMP].load[16:]]
+            if packet[ICMP].type == 0:
+                ddst_ip["OS"] = AnalyzeNetwork.PINGS[packet[ICMP].load[16:]]
         if packet[IP].ttl in {64, 128}:
             self._add_multiple_infos(dsrc_phys | dsrc_ip, ddst_phys | ddst_ip)
         else:
@@ -66,8 +76,8 @@ class AnalyzeNetwork:
         dsrc["VENDOR"] = self._get_vendor(hwsrc)
         self._add_info_to_list(dsrc)
         ddst = {}
-        ddst["MAC"] = hwdst if hwdst != "ff:ff:ff:ff:ff:ff" else self.UNKNOWN
-        ddst["IP"] = pdst if pdst != "255.255.255.255" else self.UNKNOWN
+        ddst["MAC"] = hwdst if hwdst != "ff:ff:ff:ff:ff:ff" else AnalyzeNetwork.UNKNOWN
+        ddst["IP"] = pdst if pdst != "255.255.255.255" else AnalyzeNetwork.UNKNOWN
         ddst["VENDOR"] = self._get_vendor(ddst["MAC"])
         self._add_info_to_list(ddst)
 
@@ -79,15 +89,15 @@ class AnalyzeNetwork:
             vendor = self.lookup.lookup(macaddr)
             return vendor
         except VendorNotFoundError, InvalidMacError:
-            return self.UNKNOWN
+            return AnalyzeNetwork.UNKNOWN
 
     def _null_fill_packet(self, packet):
         """
         feels in unknown for all the missing keys in the info packet
         """
-        for key in self.needed_keys:
+        for key in AnalyzeNetwork.needed_keys:
             if key not in packet:
-                packet[key] = self.UNKNOWN
+                packet[key] = AnalyzeNetwork.UNKNOWN
         return packet
 
     def _add_info_to_list(self, new_packet):
@@ -97,14 +107,14 @@ class AnalyzeNetwork:
         new_packet = self._null_fill_packet(new_packet)
         for packet in self.info:
             if (
-                packet["IP"] == new_packet["IP"] != self.UNKNOWN
-                or packet["MAC"] == new_packet["MAC"] != self.UNKNOWN
+                packet["IP"] == new_packet["IP"] != AnalyzeNetwork.UNKNOWN
+                or packet["MAC"] == new_packet["MAC"] != AnalyzeNetwork.UNKNOWN
             ):
                 # they are representing the same device
                 for key in packet:
                     packet[key] = (
                         new_packet[key]
-                        if new_packet[key] != self.UNKNOWN
+                        if new_packet[key] != AnalyzeNetwork.UNKNOWN
                         else packet[key]
                     )
                 return
@@ -116,7 +126,7 @@ class AnalyzeNetwork:
         return [
             info_packet["IP"]
             for info_packet in self.info
-            if info_packet["IP"] != self.UNKNOWN
+            if info_packet["IP"] != AnalyzeNetwork.UNKNOWN
         ]
 
     def get_macs(self):
@@ -125,7 +135,7 @@ class AnalyzeNetwork:
         return [
             info_packet["MAC"]
             for info_packet in self.info
-            if info_packet["MAC"] != self.UNKNOWN
+            if info_packet["MAC"] != AnalyzeNetwork.UNKNOWN
         ]
 
     def get_info_by_mac(self, mac):
